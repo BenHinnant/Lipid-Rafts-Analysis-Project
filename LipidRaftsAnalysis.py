@@ -11,7 +11,7 @@ import glob
 from PIL import Image, ImageSequence
 sigma = 3.5
 min_area = 1000
-#import sys
+import sys
 #import os
 def main():
     #filename = os.path.join(skimage.data_dir,r'C:\Users\sauro\OneDrive\Documents\Research\Images\w303_pho8gfp_0.4%_2021_08_19__17_39_45_Airyscan Processing-1.tif')
