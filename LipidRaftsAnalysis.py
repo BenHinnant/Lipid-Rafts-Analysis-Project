@@ -49,28 +49,30 @@ def main():
     #area_histogram(obj_areas)
     #measure_cells(labeled_image, min_area)
     #measure_domain_diameters(filename, sigma)
-    return_csv_data(test_path)
+    return_csv_data(filename)
     
 def return_csv_data(filename):
     img = Image.open(filename)
     brightest_img_brightness = 0
     brightest_img_index = 0
-    membrane_densities = []
+    brightness_arr = []
     images = []
-    for i in range (img.n_frames):
-        img.seek(i)
-        images.append()
 
+    #for i in range (img.n_frames):
+    #    img.seek(i)
+    #    images.append(np.array(img))
+        
+    #Issue: frame.copy makes a shallow copy so the image passed onto gaussian filter is in incorrect format
     #frame = img.n_frames
-    #with Image.open(filename) as img:
-     #   for i, frame in enumerate(ImageSequence.Iterator(img)):
-      #      current_frame = frame.copy()
-       #     print (type(frame))
-        #    print (type(current_frame))
-         #   frame_brightness = measure_frame_brightness(current_frame, sigma)
-          #  if frame_brightness > brightest_image_brightness:
-           #     brightest_image_index = i
-   
+    with Image.open(filename) as img:
+        for i, frame in enumerate(ImageSequence.Iterator(img)):
+            current_frame = frame.copy()
+            frame_brightness = measure_frame_brightness(np.array(current_frame), sigma)
+            brightness_arr.append(frame_brightness)
+            if frame_brightness > brightest_img_brightness:
+                brightest_img_index = i
+                brightest_img_brightness = frame_brightness
+    '''
     for i in range (img.n_frames):
         try:
             img.seek(i)
@@ -82,9 +84,10 @@ def return_csv_data(filename):
             membrane_densities[i] = img_brightness
         except EOFError as e:
            print(e)
-    print (membrane_densities)
+    '''       
+    print (brightness_arr)
     print ("Brightest image index: ", brightest_img_index)
-
+    
 def convert_img_to_np_array(path):
     img = Image.open(path)
     images = []
