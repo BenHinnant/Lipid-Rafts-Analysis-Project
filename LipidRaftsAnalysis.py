@@ -48,22 +48,24 @@ def main():
     #obj_areas = measure_object_areas(labeled_image)
     #area_histogram(obj_areas)
     #measure_cells(labeled_image, min_area)
-    #measure_domain_diameters(filename, sigma)
-    return_csv_data(filename)
-    
-def return_csv_data(filename):
+    #domain_diameters = measure_domain_diameters(filename, sigma)
+    create_microdomain_dimensions_file(filename)
+
+    #issues: the brightest image is not the clearest one because other cells contribute to increasing the brightness. Perhaps restrict the number of objects that can be on screen
+    #when determining brightest image, or restrict the location to the center of image, 
+def create_microdomain_dimensions_file(filename):
+    brightest_img = find_brightest_frame(filename)
+    obj_major_axis_length, obj_minor_axis_length = measure_domain_diameters(brightest_img)
+    print("Major axis lengths: ", obj_major_axis_length)
+    print("Minor axis lengths: ", obj_minor_axis_length)
+
+def find_brightest_frame(filename):
     img = Image.open(filename)
+    brightest_img = []
     brightest_img_brightness = 0
     brightest_img_index = 0
     brightness_arr = []
-    images = []
 
-    #for i in range (img.n_frames):
-    #    img.seek(i)
-    #    images.append(np.array(img))
-        
-    #Issue: frame.copy makes a shallow copy so the image passed onto gaussian filter is in incorrect format
-    #frame = img.n_frames
     with Image.open(filename) as img:
         for i, frame in enumerate(ImageSequence.Iterator(img)):
             current_frame = frame.copy()
@@ -72,21 +74,10 @@ def return_csv_data(filename):
             if frame_brightness > brightest_img_brightness:
                 brightest_img_index = i
                 brightest_img_brightness = frame_brightness
-    '''
-    for i in range (img.n_frames):
-        try:
-            img.seek(i)
-            img.save('Frame_%s_' % (i), filename)
-            brightest_frame_filename = ('Frame_%s_' % (i), filename)
-            img_brightness = measure_image_brightness(brightest_frame_filename, sigma)
-            if img_brightness > brightest_img_brightness:
-                brightest_img_index = i
-            membrane_densities[i] = img_brightness
-        except EOFError as e:
-           print(e)
-    '''       
+                brightest_img = np.array(current_frame)
     print (brightness_arr)
     print ("Brightest image index: ", brightest_img_index)
+    return brightest_img
     
 def convert_img_to_np_array(path):
     img = Image.open(path)
@@ -171,9 +162,10 @@ def connected_component_analysis(filename, sigma=3.5, threshold=0.2, connectivit
     labeled_image, count = skimage.measure.label(binary_mask, connectivity=connectivity, return_num=True)
     return labeled_image, count
 
-def measure_domain_diameters(filename, sigma=3.5, connectivity=2):
-    image = skio.imread(filename, as_gray=True)
+def measure_domain_diameters(image, sigma=3.5, connectivity=2):
     blurred_image = skimage.filters.gaussian(image/image.max(), sigma=sigma)
+    plt.imshow(blurred_image)
+    plt.show()
     threshold = skimage.filters.threshold_otsu(blurred_image)
     print("Threshold: ", threshold)
     binary_mask = blurred_image < threshold
@@ -184,10 +176,11 @@ def measure_domain_diameters(filename, sigma=3.5, connectivity=2):
     obj_features = skimage.measure.regionprops(labeled_image)
     obj_major_axis_length = [objf["axis_major_length"] for objf in obj_features]
     obj_minor_axis_length = [objf["axis_minor_length"] for objf in obj_features]
-    obj_diameter = [objf["equivalent_diameter_area"] for objf in obj_features]
+    #obj_diameter = [objf["equivalent_diameter_area"] for objf in obj_features]
     print("Major axis lengths: ", obj_major_axis_length)
     print("Minor axis lengths: ", obj_minor_axis_length)
-    print("Diameters", obj_diameter)
+    #print("Diameters", obj_diameter)
+    return obj_major_axis_length, obj_minor_axis_length
     
 def measure_object_areas(labeled_image):
     obj_features = skimage.measure.regionprops(labeled_image)
