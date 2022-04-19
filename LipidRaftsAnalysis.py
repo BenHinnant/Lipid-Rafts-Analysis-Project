@@ -2,26 +2,32 @@ import skimage.io as skio
 import skimage.draw
 import skimage.filters
 import skimage.measure
+import skimage.viewer
+import skimage.feature
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from skimage.util import img_as_int
 import imageio
 import glob
-from PIL import Image, ImageSequence
-sigma = 3.5
+from PIL import Image, ImageSequence, ImageFilter
+from PyQt5 import QtCore, QtGui, QtWidgets
+sigma = 0.5
 min_area = 1000
 import sys
 #import os
 def main():
     #filename = os.path.join(skimage.data_dir,r'C:\Users\sauro\OneDrive\Documents\Research\Images\w303_pho8gfp_0.4%_2021_08_19__17_39_45_Airyscan Processing-1.tif')
-    filePath = r"C:\Users\sauro\OneDrive\Documents\Research\Images\w303_pho8gfp_0.4%_2021_08_19__17_39_45_Airyscan Processing-1.tif"
-    test_path = r"C:\Users\sauro\OneDrive\Documents\Research\Images\w303_pho8gfp_2021_08_19__17_29_28_Airyscan Processing-1.tif"
-    #img = mpimg.imread(filePath)
-    #parse_tif(filePath)
+    #filePath = r"C:\Users\sauro\OneDrive\Documents\Research\Images\w303_pho8gfp_0.4%_2021_08_19__17_39_45_Airyscan Processing-1.tif"
+    #test_path = r"C:\Users\sauro\OneDrive\Documents\Research\Images\w303_pho8gfp_2021_08_19__17_29_28_Airyscan Processing-1.tif"
     #filename = "Block_21.tif"
-    filename = "w303_pho8gfp_2021_08_19__17_29_28_Airyscan Processing-1.tif"
-    #image = skio.imread(filename, as_gray=True)
+    filename = "Demo_Block_2.tif"
+    #filename = "w303_pho8gfp_2021_08_19__17_29_28_Airyscan Processing-1.tif"
+    #filename = "w303_pho8gfp_2021_08_19__17_29_28_Airyscan Processing-3.tif"
+    #img = mpimg.imread(filePath)
+    #parse_tif(filename)
+    #save_frame(filename)
+    image = skio.imread(filename, as_gray=True)
     #print (image.shape)
     #skio.imshow(image/image.max())
     #skio.show()
@@ -48,11 +54,13 @@ def main():
     #obj_areas = measure_object_areas(labeled_image)
     #area_histogram(obj_areas)
     #measure_cells(labeled_image, min_area)
-    #domain_diameters = measure_domain_diameters(filename, sigma)
-    create_microdomain_dimensions_file(filename)
+    domain_diameters = measure_domain_diameters(image, sigma)
+    #create_microdomain_dimensions_file(filename)
 
     #issues: the brightest image is not the clearest one because other cells contribute to increasing the brightness. Perhaps restrict the number of objects that can be on screen
-    #when determining brightest image, or restrict the location to the center of image, 
+    #when determining brightest image, or restrict the location to the center of image, or doing segmentation and choosing the biggest object, or
+    #for ideal microdomains, may need to use erosion to make finer lines  
+    #prioritize edge detection over frame selection! 
 def create_microdomain_dimensions_file(filename):
     brightest_img = find_brightest_frame(filename)
     obj_major_axis_length, obj_minor_axis_length = measure_domain_diameters(brightest_img)
@@ -60,7 +68,11 @@ def create_microdomain_dimensions_file(filename):
     print("Minor axis lengths: ", obj_minor_axis_length)
 
 def find_brightest_frame(filename):
-    img = Image.open(filename)
+    #image = Image.open(filename)
+    #greyscale_img = image.convert("L")
+    #img = greyscale_img.filter(ImageFilter.GaussianBlur(radius = 3.5))
+    #img = img.filter(ImageFilter.FIND_EDGES)
+    #img.show()
     brightest_img = []
     brightest_img_brightness = 0
     brightest_img_index = 0
@@ -69,6 +81,12 @@ def find_brightest_frame(filename):
     with Image.open(filename) as img:
         for i, frame in enumerate(ImageSequence.Iterator(img)):
             current_frame = frame.copy()
+            current_frame = current_frame.convert("L")
+            if i == 3:
+                canny_viewer(np.array(current_frame))
+            current_frame = current_frame.filter(ImageFilter.GaussianBlur(radius = 3.5))
+            current_frame = current_frame.filter(ImageFilter.FIND_EDGES)
+            #current_frame.show()
             frame_brightness = measure_frame_brightness(np.array(current_frame), sigma)
             brightness_arr.append(frame_brightness)
             if frame_brightness > brightest_img_brightness:
@@ -77,8 +95,39 @@ def find_brightest_frame(filename):
                 brightest_img = np.array(current_frame)
     print (brightness_arr)
     print ("Brightest image index: ", brightest_img_index)
+    plt.imshow(brightest_img)
+    plt.show()
     return brightest_img
     
+def canny_edge_detection(filename, sigma, low_threshold, high_threshold):
+    image = skimage.io.imread(fname=filename, as_gray=True)
+    skimage.io.imshow(image)
+    edges = skimage.feature.canny(
+        image=image,
+        sigma=sigma,
+        low_threshold=low_threshold,
+        high_threshold=high_threshold,
+    )
+    skio.imshow(edges)
+
+def canny_viewer(image):
+    #image = skimage.io.imread(fname=filename, as_gray=True)
+    #viewer = skimage.io.imshow(image)
+    canny_plugin = skimage.viewer.plugins.Plugin(image_filter=skimage.feature.canny)
+    canny_plugin.name = "Canny Filter Plugin"
+    canny_plugin += skimage.viewer.widgets.Slider(
+        name="sigma", low=0.0, high=7.0, value=2.0
+    )
+    canny_plugin += skimage.viewer.widgets.Slider(
+        name="low_threshold", low=0.0, high=1.0, value=0.1
+    )
+    canny_plugin += skimage.viewer.widgets.Slider(
+        name="high_threshold", low=0.0, high=1.0, value=0.2
+    )
+    viewer = skimage.viewer.ImageViewer(image=image)
+    viewer += canny_plugin
+    viewer.show()
+
 def convert_img_to_np_array(path):
     img = Image.open(path)
     images = []
@@ -90,10 +139,20 @@ def convert_img_to_np_array(path):
 def parse_tif(filePath):
     img = Image.open(filePath)
     numFramesPerTif = img.n_frames
-    for i in range (numFramesPerTif):
+    for i in range (0,3):
         try:
             img.seek(i)
-            img.save('Block_%s.tif'%(i,))
+            img.save('Demo_Block_%s.tif'%(i,))
+        except EOFError as e:
+            print(e)
+
+def save_frame(filename):
+    img = Image.open(filename)
+    numFramesPerTif = img.n_frames
+    for i in range (numFramesPerTif):
+        try:
+            if i == 3:
+                img.save('Demo_Block_%s.tif'%(i,))    
         except EOFError as e:
             print(e)
 
@@ -163,6 +222,8 @@ def connected_component_analysis(filename, sigma=3.5, threshold=0.2, connectivit
     return labeled_image, count
 
 def measure_domain_diameters(image, sigma=3.5, connectivity=2):
+    plt.imshow(image)
+    plt.show()
     blurred_image = skimage.filters.gaussian(image/image.max(), sigma=sigma)
     plt.imshow(blurred_image)
     plt.show()
