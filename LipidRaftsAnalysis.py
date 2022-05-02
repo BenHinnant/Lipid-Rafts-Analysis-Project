@@ -4,13 +4,17 @@ import skimage.filters
 import skimage.measure
 import skimage.viewer
 import skimage.feature
+from skimage import color
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+import matplotlib.cbook as cbook
+from matplotlib_scalebar.scalebar import ScaleBar
 from skimage.util import img_as_int
 import imageio
 import glob
 from PIL import Image, ImageSequence, ImageFilter
+from PIL.TiffTags import TAGS
 from PyQt5 import QtCore, QtGui, QtWidgets
 sigma = 0.5
 min_area = 1000
@@ -21,13 +25,13 @@ def main():
     #filePath = r"C:\Users\sauro\OneDrive\Documents\Research\Images\w303_pho8gfp_0.4%_2021_08_19__17_39_45_Airyscan Processing-1.tif"
     #test_path = r"C:\Users\sauro\OneDrive\Documents\Research\Images\w303_pho8gfp_2021_08_19__17_29_28_Airyscan Processing-1.tif"
     #filename = "Block_21.tif"
-    filename = "Demo_Block_2.tif"
+    #filename = "Demo_Block_2.tif"
     #filename = "w303_pho8gfp_2021_08_19__17_29_28_Airyscan Processing-1.tif"
     #filename = "w303_pho8gfp_2021_08_19__17_29_28_Airyscan Processing-3.tif"
     #img = mpimg.imread(filePath)
     #parse_tif(filename)
     #save_frame(filename)
-    image = skio.imread(filename, as_gray=True)
+    #image = skio.imread(filename, as_gray=True)
     #print (image.shape)
     #skio.imshow(image/image.max())
     #skio.show()
@@ -54,9 +58,33 @@ def main():
     #obj_areas = measure_object_areas(labeled_image)
     #area_histogram(obj_areas)
     #measure_cells(labeled_image, min_area)
-    domain_diameters = measure_domain_diameters(image, sigma)
+    #domain_diameters = measure_domain_diameters(image, sigma)
     #create_microdomain_dimensions_file(filename)
-
+    while True:
+        function_selected = False
+        function_call = input("Please enter a number to select a function: 1 for microdomain dimensions analysis, 0 to end the script: ")
+        function_num = 0
+        try:
+            function_num = int(function_call)
+        except ValueError:
+            print("This is not a number.")
+            continue
+        if (function_num == 0):
+            break
+        if (function_num == 1):
+            function_selected = True
+            image_name = input("What image would you like to analyze? Paste filename here, not filepath: ")
+            image = skio.imread(image_name, as_gray=True)
+            sigma = float(input("Enter a sigma value. Decimals are allowed: "))
+            scale_bar_question = input("Include a scale bar in your images? y/n: ")
+            if (scale_bar_question == "y"):
+                include_scale_bar = True
+            else:
+                include_scale_bar = False
+            domain_diameters = measure_domain_diameters(image, sigma, include_scale_bar)
+        if (function_selected == False):
+            print ("You have not selected a valid function.")
+        
     #issues: the brightest image is not the clearest one because other cells contribute to increasing the brightness. Perhaps restrict the number of objects that can be on screen
     #when determining brightest image, or restrict the location to the center of image, or doing segmentation and choosing the biggest object, or
     #for ideal microdomains, may need to use erosion to make finer lines  
@@ -124,7 +152,8 @@ def canny_viewer(image):
     canny_plugin += skimage.viewer.widgets.Slider(
         name="high_threshold", low=0.0, high=1.0, value=0.2
     )
-    viewer = skimage.viewer.ImageViewer(image=image)
+    gray_img = color.rgb2gray(image)
+    viewer = skimage.viewer.ImageViewer(image=gray_img)
     viewer += canny_plugin
     viewer.show()
 
@@ -221,7 +250,7 @@ def connected_component_analysis(filename, sigma=3.5, threshold=0.2, connectivit
     labeled_image, count = skimage.measure.label(binary_mask, connectivity=connectivity, return_num=True)
     return labeled_image, count
 
-def measure_domain_diameters(image, sigma=3.5, connectivity=2):
+def measure_domain_diameters(image, sigma=3.5, include_scale_bar = False, connectivity=2):
     plt.imshow(image)
     plt.show()
     blurred_image = skimage.filters.gaussian(image/image.max(), sigma=sigma)
@@ -233,8 +262,9 @@ def measure_domain_diameters(image, sigma=3.5, connectivity=2):
     plt.imshow(binary_mask)
     plt.show()
     labeled_image, count = skimage.measure.label(binary_mask, connectivity=connectivity, return_num=True)
-    print("# of objects: ", count) 
+    print("# of microdomains: ", count-1) 
     obj_features = skimage.measure.regionprops(labeled_image)
+    del obj_features[0]
     obj_major_axis_length = [objf["axis_major_length"] for objf in obj_features]
     obj_minor_axis_length = [objf["axis_minor_length"] for objf in obj_features]
     #obj_diameter = [objf["equivalent_diameter_area"] for objf in obj_features]
@@ -262,6 +292,13 @@ def measure_cells(labeled_image, min_area):
         if objf["area"] > min_area:
             large_objects.append(objf["area"])
     print("Found", len(large_objects), "cell(s)")
+
+def show_scale_bar_image(image):
+    with Image.open(image) as img:
+        meta_dict = {}
+        for key in img.tag:      
+            meta_dict[TAGS.get(key,'missing')] = img.tag[key]
+    ratio = meta_dict["PixelWidth"]
 
 if __name__ == '__main__':
     main()
