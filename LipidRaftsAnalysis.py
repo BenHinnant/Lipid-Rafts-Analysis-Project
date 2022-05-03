@@ -62,7 +62,7 @@ def main():
     #create_microdomain_dimensions_file(filename)
     while True:
         function_selected = False
-        function_call = input("Please enter a number to select a function: 1 for microdomain dimensions analysis, 0 to end the script: ")
+        function_call = input("Please enter a number to select a function: 1 for microdomain dimensions analysis, 2 to save a tif frame, 0 to end the script: ")
         function_num = 0
         try:
             function_num = int(function_call)
@@ -76,12 +76,18 @@ def main():
             image_name = input("What image would you like to analyze? Paste filename here, not filepath: ")
             image = skio.imread(image_name, as_gray=True)
             sigma = float(input("Enter a sigma value. Decimals are allowed: "))
-            scale_bar_question = input("Include a scale bar in your images? y/n: ")
-            if (scale_bar_question == "y"):
-                include_scale_bar = True
-            else:
-                include_scale_bar = False
-            domain_diameters = measure_domain_diameters(image, sigma, include_scale_bar)
+            #scale_bar_question = input("Include a scale bar in your images? y/n: ")
+            #if (scale_bar_question == "y"):
+            #    include_scale_bar = True
+            #else:
+            #    include_scale_bar = False
+            domain_diameters = measure_domain_diameters(image, sigma)
+        if (function_num == 2):
+            function_selected = True
+            file_path = input("What image would you like to analyze? Paste filepath here, not filename: ")
+            frame_num = input("Which frame number would you like to save: ")
+            frame_name = input("What name do you want for your frame: ")
+            save_frame(file_path, frame_num, frame_name)
         if (function_selected == False):
             print ("You have not selected a valid function.")
         
@@ -175,13 +181,13 @@ def parse_tif(filePath):
         except EOFError as e:
             print(e)
 
-def save_frame(filename):
-    img = Image.open(filename)
+def save_frame(file_path, frame_num, frame_name):
+    img = Image.open(file_path)
     numFramesPerTif = img.n_frames
     for i in range (numFramesPerTif):
         try:
             if i == 3:
-                img.save('Demo_Block_%s.tif'%(i,))    
+                img.save('Hyesoo_Block_%s.tif'%(i,))    
         except EOFError as e:
             print(e)
 
@@ -250,7 +256,7 @@ def connected_component_analysis(filename, sigma=3.5, threshold=0.2, connectivit
     labeled_image, count = skimage.measure.label(binary_mask, connectivity=connectivity, return_num=True)
     return labeled_image, count
 
-def measure_domain_diameters(image, sigma=3.5, include_scale_bar = False, connectivity=2):
+def measure_domain_diameters(image, sigma, include_scale_bar = False, connectivity=2):
     plt.imshow(image)
     plt.show()
     blurred_image = skimage.filters.gaussian(image/image.max(), sigma=sigma)
