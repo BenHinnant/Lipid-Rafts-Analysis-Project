@@ -5,6 +5,7 @@ import skimage.measure
 import skimage.viewer
 import skimage.feature
 from skimage import color
+import tifffile
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -14,10 +15,8 @@ from skimage.util import img_as_int
 import imageio
 import glob
 from PIL import Image, ImageSequence, ImageFilter
-from PIL.TiffTags import TAGS
-from PyQt5 import QtCore, QtGui, QtWidgets
-sigma = 0.5
-min_area = 1000
+#from PIL.TiffTags import TAGS
+#from PyQt5 import QtCore, QtGui, QtWidgets
 import sys
 #import os
 def main():
@@ -73,18 +72,18 @@ def main():
             break
         if (function_num == 1):
             function_selected = True
-            image_name = input("What image would you like to analyze? Paste filename here, not filepath: ")
+            image_name = input("What image would you like to analyze? Paste filename or filepath: ")
             image = skio.imread(image_name, as_gray=True)
             sigma = float(input("Enter a sigma value. Decimals are allowed: "))
-            #scale_bar_question = input("Include a scale bar in your images? y/n: ")
-            #if (scale_bar_question == "y"):
-            #    include_scale_bar = True
-            #else:
-            #    include_scale_bar = False
-            domain_diameters = measure_domain_diameters(image, sigma)
+            scale_bar_question = input("Include a scale bar in your images? y/n: ")
+            if (scale_bar_question == "y"):
+                include_scale_bar = True
+            else:
+                include_scale_bar = False
+            domain_diameters = measure_domain_diameters(image, sigma, include_scale_bar)
         if (function_num == 2):
             function_selected = True
-            file_path = input("What image would you like to analyze? Paste filepath here, not filename: ")
+            file_path = input("What image would you like to analyze? Paste filepath or filename: ")
             frame_num = input("Which frame number would you like to save: ")
             frame_name = input("What name do you want for your frame: ")
             save_frame(file_path, frame_num, frame_name)
@@ -95,13 +94,13 @@ def main():
     #when determining brightest image, or restrict the location to the center of image, or doing segmentation and choosing the biggest object, or
     #for ideal microdomains, may need to use erosion to make finer lines  
     #prioritize edge detection over frame selection! 
-def create_microdomain_dimensions_file(filename):
-    brightest_img = find_brightest_frame(filename)
+def create_microdomain_dimensions_file(filename, sigma):
+    brightest_img = find_brightest_frame(filename, sigma)
     obj_major_axis_length, obj_minor_axis_length = measure_domain_diameters(brightest_img)
     print("Major axis lengths: ", obj_major_axis_length)
     print("Minor axis lengths: ", obj_minor_axis_length)
 
-def find_brightest_frame(filename):
+def find_brightest_frame(filename, sigma):
     #image = Image.open(filename)
     #greyscale_img = image.convert("L")
     #img = greyscale_img.filter(ImageFilter.GaussianBlur(radius = 3.5))
@@ -256,17 +255,11 @@ def connected_component_analysis(filename, sigma=3.5, threshold=0.2, connectivit
     labeled_image, count = skimage.measure.label(binary_mask, connectivity=connectivity, return_num=True)
     return labeled_image, count
 
-def measure_domain_diameters(image, sigma, include_scale_bar = False, connectivity=2):
-    plt.imshow(image)
-    plt.show()
+def measure_domain_diameters(image, sigma=3.5, include_scale_bar = False, connectivity=2):
     blurred_image = skimage.filters.gaussian(image/image.max(), sigma=sigma)
-    plt.imshow(blurred_image)
-    plt.show()
     threshold = skimage.filters.threshold_otsu(blurred_image)
     print("Threshold: ", threshold)
     binary_mask = blurred_image < threshold
-    plt.imshow(binary_mask)
-    plt.show()
     labeled_image, count = skimage.measure.label(binary_mask, connectivity=connectivity, return_num=True)
     print("# of microdomains: ", count-1) 
     obj_features = skimage.measure.regionprops(labeled_image)
@@ -277,6 +270,17 @@ def measure_domain_diameters(image, sigma, include_scale_bar = False, connectivi
     print("Major axis lengths: ", obj_major_axis_length)
     print("Minor axis lengths: ", obj_minor_axis_length)
     #print("Diameters", obj_diameter)
+    if (include_scale_bar == True):
+        show_scale_bar_image(image)
+        show_scale_bar_image(blurred_image)
+        show_scale_bar_image(binary_mask)
+    else:
+        plt.imshow(image)
+        plt.show()
+        plt.imshow(blurred_image)
+        plt.show()
+        plt.imshow(binary_mask)
+        plt.show()
     return obj_major_axis_length, obj_minor_axis_length
     
 def measure_object_areas(labeled_image):
@@ -299,12 +303,33 @@ def measure_cells(labeled_image, min_area):
             large_objects.append(objf["area"])
     print("Found", len(large_objects), "cell(s)")
 
+# Given an image, show that image with a scalebar
 def show_scale_bar_image(image):
+    with tifffile.TiffFile(image) as tif:
+        metadata = tif.imagej_metadata
+    physical_size_x = metadata['PhysicalSizeX']
+    #physical_size_y = metadata['PhysicalSizeY']
+    physical_size_x_unit = metadata['PhysicalSizeXUnit']
+    fig, ax = plt.subplots(figsize=(15, 10))
+    ax.imshow(image)
+    scalebar = ScaleBar(dx=physical_size_x,
+                        units=physical_size_x_unit,
+                        fixed_value=1,
+                        fixed_units='um',
+                        location=4,
+                        box_alpha=0,
+                        font_properties={'family' : 'monospace',
+                                        'weight' : 'semibold',
+                                        'size' : 20})
+    ax.add_artist(scalebar)
+    plt.show()
+    '''
     with Image.open(image) as img:
         meta_dict = {}
         for key in img.tag:      
             meta_dict[TAGS.get(key,'missing')] = img.tag[key]
     ratio = meta_dict["PixelWidth"]
+    '''
 
 if __name__ == '__main__':
     main()
