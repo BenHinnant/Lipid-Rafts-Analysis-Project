@@ -10,12 +10,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import matplotlib.cbook as cbook
-from matplotlib_scalebar.scalebar import ScaleBar
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+import matplotlib.font_manager as fm
 from skimage.util import img_as_int
 import imageio
 import glob
 from PIL import Image, ImageSequence, ImageFilter
-#from PIL.TiffTags import TAGS
+from PIL.TiffTags import TAGS
 #from PyQt5 import QtCore, QtGui, QtWidgets
 import sys
 #import os
@@ -80,7 +81,12 @@ def main():
                 include_scale_bar = True
             else:
                 include_scale_bar = False
-            domain_diameters = measure_domain_diameters(image, sigma, image_name, include_scale_bar)
+            units_question = input("Which units should the images have? Press 1 for pixels and 2 for microns: ")
+            if (int(units_question) == 1):
+                unit_type = "pixels"
+            elif (int(units_question) == 2):
+                unit_type = "microns"
+            measure_domain_diameters(image, sigma, image_name, include_scale_bar, unit_type)
         if (function_num == 2):
             function_selected = True
             file_path = input("What image would you like to analyze? Paste filepath or filename: ")
@@ -93,13 +99,14 @@ def main():
     #issues: the brightest image is not the clearest one because other cells contribute to increasing the brightness. Perhaps restrict the number of objects that can be on screen
     #when determining brightest image, or restrict the location to the center of image, or doing segmentation and choosing the biggest object, or
     #for ideal microdomains, may need to use erosion to make finer lines  
-    #prioritize edge detection over frame selection! 
+    #future issues: only use XResolution and not YResolution, currently removes the largest region assuming its the background
+'''    
 def create_microdomain_dimensions_file(filename, sigma):
     brightest_img = find_brightest_frame(filename, sigma)
     obj_major_axis_length, obj_minor_axis_length = measure_domain_diameters(brightest_img)
     print("Major axis lengths: ", obj_major_axis_length)
     print("Minor axis lengths: ", obj_minor_axis_length)
-
+'''
 def find_brightest_frame(filename, sigma):
     #image = Image.open(filename)
     #greyscale_img = image.convert("L")
@@ -256,7 +263,7 @@ def connected_component_analysis(filename, sigma=3.5, threshold=0.2, connectivit
     return labeled_image, count
 
 # Measures the microdomain domains X and Y axes in microns 
-def measure_domain_diameters(image, sigma=3.5, image_filename="null", include_scale_bar = False, connectivity=2):
+def measure_domain_diameters(image, sigma=3.5, image_filename="null", include_scale_bar=False, unit_type="pixels", connectivity=2):
     blurred_image = skimage.filters.gaussian(image/image.max(), sigma=sigma)
     threshold = skimage.filters.threshold_otsu(blurred_image)
     print("Threshold: ", threshold)
@@ -265,13 +272,19 @@ def measure_domain_diameters(image, sigma=3.5, image_filename="null", include_sc
     print("# of microdomains: ", count-1) 
     obj_features = skimage.measure.regionprops(labeled_image)
     del obj_features[0]
-    # Given the image filename, finds the X resolution to convert pixels to microns
-    physical_size_x, physical_size_x_unit = find_resolution(image_filename)
-    obj_major_axis_length = [objf["axis_major_length"] for objf in obj_features*physical_size_x]
-    obj_minor_axis_length = [objf["axis_minor_length"] for objf in obj_features*physical_size_x]
+    obj_major_axis_pixels = [objf["axis_major_length"] for objf in obj_features]
+    obj_minor_axis_pixels = [objf["axis_minor_length"] for objf in obj_features]
+    if (unit_type == "pixels"):
+        print("Major axis lengths in pixels: ", obj_major_axis_pixels)
+        print("Minor axis lengths in pixels: ", obj_minor_axis_pixels)
+    if (unit_type == "microns"):
+        # Given the image filename, finds the X resolution to convert pixels to microns
+        physical_size_x, physical_size_x_unit = find_resolution(image_filename)
+        obj_major_axis_microns = [float(x)*physical_size_x for x in obj_major_axis_pixels]
+        obj_minor_axis_microns = [float(x)*physical_size_x for x in obj_minor_axis_pixels]
+        print("Major axis lengths in microns: ", obj_major_axis_microns)
+        print("Minor axis lengths in microns: ", obj_minor_axis_microns)
     #obj_diameter = [objf["equivalent_diameter_area"] for objf in obj_features]
-    print("Major axis lengths: ", obj_major_axis_length)
-    print("Minor axis lengths: ", obj_minor_axis_length)
     #print("Diameters", obj_diameter)
     if (include_scale_bar == True):
         physical_size_x, physical_size_x_unit = find_resolution(image_filename)
@@ -285,7 +298,7 @@ def measure_domain_diameters(image, sigma=3.5, image_filename="null", include_sc
         plt.show()
         plt.imshow(binary_mask)
         plt.show()
-    return obj_major_axis_length, obj_minor_axis_length
+    #return obj_major_axis_microns, obj_minor_axis_microns
     
 def measure_object_areas(labeled_image):
     obj_features = skimage.measure.regionprops(labeled_image)
@@ -309,39 +322,49 @@ def measure_cells(labeled_image, min_area):
 
 #Given a filename, finds the x resolution of the image, e.g. 3 microns per pixel.
 #Assumes the y resolution is the same
+
 def find_resolution(image_filename):
+    with Image.open(image_filename) as img:
+        meta_dict = {TAGS[key] : img.tag[key] for key in img.tag.keys()}
+        #print(meta_dict)
+        #print(type(meta_dict))
+        #print(meta_dict["XResolution"])
+        #print(type(meta_dict["XResolution"]))
+        xresolution = meta_dict["XResolution"][0]
+        physical_size_x = xresolution[0]/xresolution[1]
+        #print(physical_size_x)
+        #print(type(physical_size_x))
+        physical_size_x_unit = "um"
+        return physical_size_x, physical_size_x_unit
+
+'''
+def find_resolution(image_filename):
+    print (image_filename)
     with tifffile.TiffFile(image_filename) as tif:
-            metadata = tif.imagej_metadata
-    xres_meters = metadata['Scaling|Distance|Value #1']
+            imagej_metadata = tif.imagej_metadata
+    print (imagej_metadata)
+    xres_meters = imagej_metadata['XResolution']
     xres_microns = xres_meters*(10^6)
     #physical_size_y = metadata['PhysicalSizeY']
-    xres_unit = metadata['Unit']
+    xres_unit = imagej_metadata['Unit']
     print (xres_microns.type)
     print (xres_unit.type)
     return xres_microns, xres_unit
-
+'''
 # Given an image, show that image with a scalebar
 def show_scale_bar_image(image, physical_size_x, physical_size_x_unit):
-    fig, ax = plt.subplots(figsize=(15, 10))
+    fontprops = fm.FontProperties(size=10)
+    fig, ax = plt.subplots()
     ax.imshow(image)
-    scalebar = ScaleBar(dx=physical_size_x,
-                        units=physical_size_x_unit,
-                        fixed_value=1,
-                        fixed_units='um',
-                        location=4,
-                        box_alpha=0,
-                        font_properties={'family' : 'monospace',
-                                        'weight' : 'semibold',
-                                        'size' : 20})
+    scalebar = AnchoredSizeBar(ax.transData,
+                           10, '10 ' + physical_size_x_unit, 'lower right', 
+                           pad=0.1,
+                           color='white',
+                           frameon=False,
+                           size_vertical=1,
+                           fontproperties=fontprops)
     ax.add_artist(scalebar)
     plt.show()
-    '''
-    with Image.open(image) as img:
-        meta_dict = {}
-        for key in img.tag:      
-            meta_dict[TAGS.get(key,'missing')] = img.tag[key]
-    ratio = meta_dict["PixelWidth"]
-    '''
 
 if __name__ == '__main__':
     main()
