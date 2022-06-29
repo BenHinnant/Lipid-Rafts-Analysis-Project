@@ -4,7 +4,8 @@ import skimage.filters
 import skimage.measure
 import skimage.viewer
 import skimage.feature
-from skimage import color
+from skimage.transform import hough_circle, hough_circle_peaks, hough_ellipse
+from skimage import color, img_as_ubyte
 import tifffile
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,7 +18,7 @@ import imageio
 import glob
 from PIL import Image, ImageSequence, ImageFilter
 from PIL.TiffTags import TAGS
-#from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 import sys
 #import os
 def main():
@@ -62,7 +63,8 @@ def main():
     #create_microdomain_dimensions_file(filename)
     while True:
         function_selected = False
-        function_call = input("Please enter a number to select a function: 1 for microdomain dimensions analysis, 2 to save a tif frame, 0 to end the script: ")
+        function_call = input("""Please enter a number to select a function: 1 for microdomain dimensions analysis, 
+        2 to save a tif frame, 3 for canny edge detection, 4 for hough transform, 0 to end the script: """)
         function_num = 0
         try:
             function_num = int(function_call)
@@ -81,7 +83,7 @@ def main():
                 include_scale_bar = True
             else:
                 include_scale_bar = False
-            units_question = input("Which units should the images have? Press 1 for pixels and 2 for microns: ")
+            units_question = input("Which units should the images have? Enter 1 for pixels and 2 for microns: ")
             if (int(units_question) == 1):
                 unit_type = "pixels"
             elif (int(units_question) == 2):
@@ -93,6 +95,27 @@ def main():
             frame_num = input("Which frame number would you like to save: ")
             frame_name = input("What name do you want for your frame: ")
             save_frame(file_path, frame_num, frame_name)
+        if (function_num == 3):
+            function_selected = True
+            fname = input("What image would you like to analyze? Paste filename or filepath: ")
+            image = skio.imread(fname, as_gray=True)
+            version = input("""Would you like to use the interactive version with sliders or the simple version? 
+            Enter 1 for the interactive version and 2 for the simple version: """)
+            if (int(version) == 1):
+                canny_viewer(fname)
+            if (int(version) == 2):
+                sigma = float(input("Enter a sigma value. Decimals are allowed: "))
+                low_threshold = float(input("Enter the low threshold. Decimals are allowed: "))
+                high_threshold = float(input("Enter the high threshold. Decimals are allowed: "))
+                canny_edge_detection(image, sigma, low_threshold, high_threshold)
+        if (function_num == 4):
+            function_selected = True
+            fname = input("What image would you like to analyze? Paste filename or filepath: ")
+            image = skio.imread(fname)
+            sigma = float(input("Enter a sigma value. Decimals are allowed: "))
+            low_threshold = float(input("Enter the low threshold. Decimals are allowed: "))
+            high_threshold = float(input("Enter the high threshold. Decimals are allowed: "))
+            hough_transform(image, sigma, low_threshold, high_threshold)
         if (function_selected == False):
             print ("You have not selected a valid function.")
         
@@ -107,6 +130,88 @@ def create_microdomain_dimensions_file(filename, sigma):
     print("Major axis lengths: ", obj_major_axis_length)
     print("Minor axis lengths: ", obj_minor_axis_length)
 '''
+    
+#reference: Xie, Yonghong, and Qiang Ji. “A new efficient ellipse detection method.” Pattern Recognition, 2002. Proceedings. 16th International Conference on. Vol. 2. IEEE, 2002
+def hough_transform(image_rgb, sigma, low_threshold, high_threshold):
+    image_gray = color.rgb2gray(image_rgb)
+    edges = skimage.feature.canny(image=image_gray, sigma=sigma, low_threshold=low_threshold, high_threshold=high_threshold)
+    result = hough_ellipse(edges, accuracy=20, threshold=250, min_size=50, max_size=120)
+    result.sort(order='accumulator')
+    print(result)
+    best = list(result[-1])
+    yc, xc, a, b = [int(round(x)) for x in best[1:5]]
+    orientation = best[5]
+    cy, cx = skimage.draw.ellipse_perimeter(yc, xc, a, b, orientation)
+    image_rgb[cy, cx] = (0, 0, 255)
+    edges = color.gray2rgb(img_as_ubyte(edges))
+    edges[cy, cx] = (250, 0, 0)
+    fig2, (ax1, ax2) = plt.subplots(ncols=2, nrows=1, figsize=(8, 4), sharex=True, sharey=True)
+    ax1.set_title('Original picture')
+    ax1.imshow(image_rgb)
+    ax2.set_title('Edge (white) and result (red)')
+    ax2.imshow(edges)
+    plt.show()
+
+def canny_edge_detection(image, sigma, low_threshold, high_threshold):
+    skio.imshow(image/image.max())
+    edges = skimage.feature.canny(
+        image=image,
+        sigma=sigma,
+        low_threshold=low_threshold,
+        high_threshold=high_threshold,
+    )
+    plt.imshow(edges/edges.max())
+    plt.show()
+    
+def canny_viewer(fname):
+    image = skimage.io.imread(fname=fname)
+    #viewer = skimage.io.imshow(image)
+    viewer = skimage.viewer.ImageViewer(image=image)
+    canny_plugin = skimage.viewer.plugins.Plugin(image_filter=skimage.feature.canny)
+    #canny_plugin = Plugin(image_filter=skimage.feature.canny)
+    canny_plugin.name = "Canny Filter Plugin"
+    canny_plugin += skimage.viewer.widgets.Slider(
+        name="sigma", low=0.0, high=7.0, value=2.0
+    )
+    canny_plugin += skimage.viewer.widgets.Slider(
+        name="low_threshold", low=0.0, high=1.0, value=0.1
+    )
+    canny_plugin += skimage.viewer.widgets.Slider(
+        name="high_threshold", low=0.0, high=1.0, value=0.2
+    )
+    #gray_img = color.rgb2gray(image)
+    #viewer = skimage.viewer.ImageViewer(image=image)
+    viewer += canny_plugin
+    viewer.show()
+
+def convert_img_to_np_array(path):
+    img = Image.open(path)
+    images = []
+    for i in range (img.n_frames):
+        img.seek(i)
+        images.append(np.array(img))
+    return np.array(images)
+
+def parse_tif(filePath):
+    img = Image.open(filePath)
+    numFramesPerTif = img.n_frames
+    for i in range (0,3):
+        try:
+            img.seek(i)
+            img.save('Demo_Block_%s.tif'%(i,))
+        except EOFError as e:
+            print(e)
+
+def save_frame(file_path, frame_num, frame_name):
+    img = Image.open(file_path)
+    numFramesPerTif = img.n_frames
+    for i in range (numFramesPerTif):
+        try:
+            if i == 3:
+                img.save('Hyesoo_Block_%s.tif'%(i,))    
+        except EOFError as e:
+            print(e)
+
 def find_brightest_frame(filename, sigma):
     #image = Image.open(filename)
     #greyscale_img = image.convert("L")
@@ -138,64 +243,6 @@ def find_brightest_frame(filename, sigma):
     plt.imshow(brightest_img)
     plt.show()
     return brightest_img
-    
-def canny_edge_detection(filename, sigma, low_threshold, high_threshold):
-    image = skimage.io.imread(fname=filename, as_gray=True)
-    skimage.io.imshow(image)
-    edges = skimage.feature.canny(
-        image=image,
-        sigma=sigma,
-        low_threshold=low_threshold,
-        high_threshold=high_threshold,
-    )
-    skio.imshow(edges)
-
-def canny_viewer(image):
-    #image = skimage.io.imread(fname=filename, as_gray=True)
-    #viewer = skimage.io.imshow(image)
-    canny_plugin = skimage.viewer.plugins.Plugin(image_filter=skimage.feature.canny)
-    canny_plugin.name = "Canny Filter Plugin"
-    canny_plugin += skimage.viewer.widgets.Slider(
-        name="sigma", low=0.0, high=7.0, value=2.0
-    )
-    canny_plugin += skimage.viewer.widgets.Slider(
-        name="low_threshold", low=0.0, high=1.0, value=0.1
-    )
-    canny_plugin += skimage.viewer.widgets.Slider(
-        name="high_threshold", low=0.0, high=1.0, value=0.2
-    )
-    gray_img = color.rgb2gray(image)
-    viewer = skimage.viewer.ImageViewer(image=gray_img)
-    viewer += canny_plugin
-    viewer.show()
-
-def convert_img_to_np_array(path):
-    img = Image.open(path)
-    images = []
-    for i in range (img.n_frames):
-        img.seek(i)
-        images.append(np.array(img))
-    return np.array(images)
-
-def parse_tif(filePath):
-    img = Image.open(filePath)
-    numFramesPerTif = img.n_frames
-    for i in range (0,3):
-        try:
-            img.seek(i)
-            img.save('Demo_Block_%s.tif'%(i,))
-        except EOFError as e:
-            print(e)
-
-def save_frame(file_path, frame_num, frame_name):
-    img = Image.open(file_path)
-    numFramesPerTif = img.n_frames
-    for i in range (numFramesPerTif):
-        try:
-            if i == 3:
-                img.save('Hyesoo_Block_%s.tif'%(i,))    
-        except EOFError as e:
-            print(e)
 
 def gaus_blur(filename, sigma):
     image = skio.imread(fname=filename)
@@ -271,6 +318,7 @@ def measure_domain_diameters(image, sigma=3.5, image_filename="null", include_sc
     labeled_image, count = skimage.measure.label(binary_mask, connectivity=connectivity, return_num=True)
     print("# of microdomains: ", count-1) 
     obj_features = skimage.measure.regionprops(labeled_image)
+    #Delete the largest region in the image, the background
     del obj_features[0]
     obj_major_axis_pixels = [objf["axis_major_length"] for objf in obj_features]
     obj_minor_axis_pixels = [objf["axis_minor_length"] for objf in obj_features]
@@ -287,6 +335,7 @@ def measure_domain_diameters(image, sigma=3.5, image_filename="null", include_sc
     #obj_diameter = [objf["equivalent_diameter_area"] for objf in obj_features]
     #print("Diameters", obj_diameter)
     if (include_scale_bar == True):
+        #Issue: scale bars with pixels still show um due to line below
         physical_size_x, physical_size_x_unit = find_resolution(image_filename)
         show_scale_bar_image(image, physical_size_x, physical_size_x_unit)
         show_scale_bar_image(blurred_image, physical_size_x, physical_size_x_unit)
